@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../Downloads/Ramen-Shop-main"
+		}
+	],
+	"settings": {
+		"liveServer.settings.port": 5501
+	}
+}
