@@ -35,22 +35,20 @@ export default function ShopModel() {
           material.emissiveIntensity = isNeon ? 0.6 : 0.06;
         }
 
-        // Keep most materials single-sided (cleaner), but make very thin
-        // plane-like geometry double-sided so it doesn't disappear when
-        // you rotate below/behind it.
-        if ("side" in material && obj.geometry) {
-          if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
-          const bb = obj.geometry.boundingBox;
-          if (bb) {
-            const size = new THREE.Vector3();
-            bb.getSize(size);
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const minDim = Math.min(size.x, size.y, size.z);
-            const isThin = maxDim > 0 && minDim / maxDim < 0.02;
-            material.side = isThin ? THREE.DoubleSide : THREE.FrontSide;
-          } else {
-            material.side = THREE.FrontSide;
-          }
+        // The asset declares most materials as double-sided; keep it consistent
+        // so geometry doesn't disappear when you rotate underneath/behind.
+        if ("side" in material) material.side = THREE.DoubleSide;
+
+        // Fix view-dependent popping: the GLB uses alphaMode=BLEND widely, which
+        // causes depth sorting artifacts when orbiting. Convert to stable cutout.
+        if ("transparent" in material && material.transparent) {
+          material.transparent = false;
+          material.opacity = 1;
+          material.depthWrite = true;
+          material.depthTest = true;
+          material.alphaTest = Math.max(material.alphaTest || 0, 0.25);
+          material.alphaToCoverage = true;
+          material.blending = THREE.NormalBlending;
         }
 
         material.needsUpdate = true;
