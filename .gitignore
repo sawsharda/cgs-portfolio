@@ -1,3 +1,27 @@
 node_modules/
 .env
 dist/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build/cache
+coverage/
+.cache/
+.tmp/
+temp/
+
+# Environment overrides
+.env.local
+.env.*.local
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
