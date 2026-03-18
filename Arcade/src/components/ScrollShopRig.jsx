@@ -9,7 +9,7 @@ function getScrollProgress() {
   return THREE.MathUtils.clamp(window.scrollY / maxScroll, 0, 1);
 }
 
-export default function ScrollShopRig() {
+export default function ScrollShopRig({ machineHoverEnabled = false }) {
   const groupRef = useRef(null);
   const introProgress = useRef(0);
 
@@ -53,7 +53,7 @@ export default function ScrollShopRig() {
       ref={groupRef}
       position={[basePosition.x, basePosition.y, basePosition.z]}
     >
-      <ShopModel />
+      <ShopModel machineHoverEnabled={machineHoverEnabled} />
     </group>
   );
 }

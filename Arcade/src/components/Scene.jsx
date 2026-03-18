@@ -55,7 +55,7 @@ function LoadingProxy() {
   );
 }
 
-export default function Scene() {
+export default function Scene({ machineHoverEnabled = false }) {
   return (
     <>
       <Backdrop />
@@ -64,7 +64,7 @@ export default function Scene() {
       <Lighting />
 
       <Suspense fallback={<LoadingProxy />}>
-        <ScrollShopRig />
+        <ScrollShopRig machineHoverEnabled={machineHoverEnabled} />
       </Suspense>
     </>
   );

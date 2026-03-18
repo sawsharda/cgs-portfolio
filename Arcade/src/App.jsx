@@ -3,7 +3,6 @@ import { OrbitControls, useProgress } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Scene from "./components/Scene";
 import CameraLogger from "./components/CameraLogger";
-import HoverCard from "./components/HoverCard";
 import * as THREE from "three";
 
 function clamp01(value) {
@@ -403,84 +402,6 @@ function FreeCameraTelemetry({ onTelemetry, controlsRef, enabled }) {
   return null;
 }
 
-function findCabinetName(obj) {
-  let cur = obj;
-  let depth = 0;
-  while (cur && depth < 12) {
-    const name = (cur.name || "").toLowerCase();
-    if (name.includes("arcade_cabinet") || name.includes("arcadecabinet")) {
-      return cur.name || "Arcade_Cabinet";
-    }
-    cur = cur.parent;
-    depth += 1;
-  }
-  return null;
-}
-
-function CabinetHoverTracker({ enabled, onHoverChange }) {
-  const { camera, scene, gl } = useThree();
-  const raycaster = useMemo(() => new THREE.Raycaster(), []);
-  const mouse = useMemo(() => new THREE.Vector2(), []);
-
-  useEffect(() => {
-    if (!enabled) {
-      onHoverChange({ visible: false, position: [0, 0, 0], cabinetName: null });
-      return;
-    }
-
-    const dom = gl.domElement;
-
-    const onPointerMove = (event) => {
-      const rect = dom.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersections = raycaster.intersectObjects(scene.children, true);
-
-      // Find first cabinet hit
-      let hit = null;
-      for (let i = 0; i < intersections.length; i++) {
-        if (findCabinetName(intersections[i].object)) {
-          hit = intersections[i];
-          break;
-        }
-      }
-
-      if (!hit) {
-        onHoverChange({
-          visible: false,
-          position: [0, 0, 0],
-          cabinetName: null,
-        });
-        return;
-      }
-
-      const cabinetName = findCabinetName(hit.object);
-      // Simple offset upward to avoid z-fighting
-      onHoverChange({
-        visible: true,
-        position: [hit.point.x, hit.point.y + 0.3, hit.point.z],
-        cabinetName,
-      });
-    };
-
-    const onPointerLeave = () => {
-      onHoverChange({ visible: false, position: [0, 0, 0], cabinetName: null });
-    };
-
-    dom.addEventListener("pointermove", onPointerMove);
-    dom.addEventListener("pointerleave", onPointerLeave);
-
-    return () => {
-      dom.removeEventListener("pointermove", onPointerMove);
-      dom.removeEventListener("pointerleave", onPointerLeave);
-    };
-  }, [enabled, camera, scene, gl, raycaster, mouse, onHoverChange]);
-
-  return null;
-}
-
 export default function App() {
   const introTargetProgress = 0.556;
   const hotspotTriggerProgress = 1.0;
@@ -505,21 +426,9 @@ export default function App() {
   const [focusRequest, setFocusRequest] = useState(null);
   const [clearFocusRequest, setClearFocusRequest] = useState(null);
   const [focusActive, setFocusActive] = useState(false);
-  const [hoverCard, setHoverCard] = useState({
-    visible: false,
-    position: [0, 0, 0],
-    cabinetName: null,
-  });
   const controlsRef = useRef(null);
-
   const machineHoverEnabled =
     !freeMove && focusActive && focusRequest?.shotId === "machines";
-  const showMachineCard = machineHoverEnabled && hoverCard.visible;
-
-  useEffect(() => {
-    if (machineHoverEnabled) return;
-    setHoverCard({ visible: false, position: [0, 0, 0], cabinetName: null });
-  }, [machineHoverEnabled]);
 
   const hotspotsVisible =
     !freeMove &&
@@ -774,20 +683,13 @@ export default function App() {
             enabled={freeMove}
           />
 
-          <CabinetHoverTracker
-            enabled={machineHoverEnabled}
-            onHoverChange={setHoverCard}
-          />
-
           <OrbitControls
             ref={controlsRef}
             enabled={freeMove}
             enableDamping
             dampingFactor={0.08}
           />
-
-          <HoverCard position={hoverCard.position} visible={showMachineCard} />
-          <Scene />
+          <Scene machineHoverEnabled={machineHoverEnabled} />
         </Canvas>
       </div>
 
