@@ -254,6 +254,15 @@ export default function App() {
           L: [{telemetry.look.x.toFixed(3)}, {telemetry.look.y.toFixed(3)},{" "}
           {telemetry.look.z.toFixed(3)}]
         </div>
+        <div style={{ color: "#ff8f8f", marginTop: 8 }}>
+          Hovered Cabinet: {window.__DEBUG_CABINET || 'None'}
+        </div>
+        <div style={{ color: "#ff8f8f" }}>
+          Target POP Pos: {window.__DEBUG_POS || 'None'}
+        </div>
+        <div style={{ color: "#ff8f8f" }}>
+          Raw Hit: {window.__DEBUG_RAW_HIT || 'None'}
+        </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button
             type="button"
