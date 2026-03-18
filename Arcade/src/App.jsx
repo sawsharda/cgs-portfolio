@@ -29,6 +29,9 @@ const CAMERA_SPLINE_POINTS = [
   [2.624, 1.722, 3.002],
   [-1.057, 1.114, 2.579],
   [-2.976, 0.383, 0.808],
+  [-2.905, 0.571, 0.634],
+  [-2.500, 0.850, -0.800],
+  [-0.803, 1.130, 0.191],
 ];
 
 const LOOK_SPLINE_POINTS = [
@@ -36,6 +39,9 @@ const LOOK_SPLINE_POINTS = [
   [-0.546, 0.333, -0.239],
   [-0.137, 0.327, -0.153],
   [-0.1, 0.175, 0.024],
+  [0.003, -0.450, -0.085],
+  [0.100, 0.400, -0.080],
+  [0.196, 0.892, -0.066],
 ];
 
 const FOCUS_SHOTS = [
@@ -517,6 +523,15 @@ export default function App() {
         <div>
           L: [{telemetry.look.x.toFixed(3)}, {telemetry.look.y.toFixed(3)},{" "}
           {telemetry.look.z.toFixed(3)}]
+        </div>
+        <div style={{ color: "#ff8f8f", marginTop: 8 }}>
+          Hovered Cabinet: {window.__DEBUG_CABINET || 'None'}
+        </div>
+        <div style={{ color: "#ff8f8f" }}>
+          Target POP Pos: {window.__DEBUG_POS || 'None'}
+        </div>
+        <div style={{ color: "#ff8f8f" }}>
+          Raw Hit: {window.__DEBUG_RAW_HIT || 'None'}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button
