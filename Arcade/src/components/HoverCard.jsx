@@ -1,12 +1,18 @@
 import { Html } from "@react-three/drei";
 
-export default function HoverCard({ position, visible, onClick, onPointerOver, onPointerOut }) {
+export default function HoverCard({
+  position,
+  visible,
+  onClick,
+  onPointerOver,
+  onPointerOut,
+}) {
   if (!visible) return null;
 
   return (
-    <Html position={position} center>
-      <div 
-        className="cgs-game-card" 
+    <Html position={position} center zIndexRange={[100, 0]}>
+      <div
+        className="cgs-game-card"
         onClick={(e) => {
           e.stopPropagation();
           if (onClick) onClick(e);
@@ -16,9 +22,9 @@ export default function HoverCard({ position, visible, onClick, onPointerOver, o
       >
         <div className="cgs-card-inner">
           <div className="cgs-card-image-wrapper">
-            <img 
-              src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=400&q=80" 
-              alt="Game Thumbnail" 
+            <img
+              src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=400&q=80"
+              alt="Game Thumbnail"
               className="cgs-card-image"
             />
             <div className="cgs-image-overlay" />

@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, useProgress } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Scene from "./components/Scene";
 import CameraLogger from "./components/CameraLogger";
@@ -7,6 +7,21 @@ import * as THREE from "three";
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
+}
+
+function safeSamplePointAt(curve, t, out, fallback) {
+  const safeT = Number.isFinite(t) ? THREE.MathUtils.clamp(t, 0, 1) : 0;
+
+  if (!curve || !curve.points || curve.points.length < 2) {
+    out.copy(fallback);
+    return;
+  }
+
+  try {
+    out.copy(curve.getPointAt(safeT));
+  } catch {
+    out.copy(fallback);
+  }
 }
 
 const CAMERA_SPLINE_POINTS = [
@@ -29,9 +44,44 @@ const LOOK_SPLINE_POINTS = [
   [0.196, 0.892, -0.066],
 ];
 
-function ScrollPathCameraRig({ onTelemetry, jumpRequest, enabled }) {
+const FOCUS_SHOTS = [
+  {
+    id: "machines",
+    label: "A",
+    camera: [-0.203, 0.98, 0.037],
+    look: [0.108, 0.94, -0.047],
+    ui: { left: "53%", top: "18%" },
+  },
+  {
+    id: "dance-floor",
+    label: "B",
+    camera: [-0.413, 0.39, 0.84],
+    look: [-0.717, 0.009, -0.438],
+    ui: { left: "24%", top: "54%" },
+  },
+  {
+    id: "scanner-wall",
+    label: "C",
+    camera: [-0.722, 0.107, 0.438],
+    look: [-0.292, 0.077, 0.341],
+    ui: { left: "58%", top: "54%" },
+  },
+];
+
+function ScrollPathCameraRig({
+  onTelemetry,
+  jumpRequest,
+  focusRequest,
+  clearFocusRequest,
+  onFocusChange,
+  enabled,
+  introCanStart,
+}) {
   const { camera } = useThree();
-  const heroProgress = 0;
+  const heroProgress = 0.556;
+  const minProgressAfterIntro = heroProgress;
+  const clampPlayableProgress = (value) =>
+    THREE.MathUtils.clamp(value, minProgressAfterIntro, 1);
   const progress = useRef(0);
   const targetProgress = useRef(heroProgress);
   const introElapsed = useRef(0);
@@ -39,6 +89,38 @@ function ScrollPathCameraRig({ onTelemetry, jumpRequest, enabled }) {
   const lastJumpId = useRef(null);
   const telemetryAccumulator = useRef(0);
   const lookPoint = useMemo(() => new THREE.Vector3(), []);
+  const focusCameraTarget = useMemo(() => new THREE.Vector3(), []);
+  const focusLookTarget = useMemo(() => new THREE.Vector3(), []);
+  const lastFocusId = useRef(null);
+  const lastClearFocusId = useRef(null);
+  const focusActive = useRef(false);
+  const returnFromFocusActive = useRef(false);
+  const returnFromFocusElapsed = useRef(0);
+  const returnFromFocusDuration = 0.9;
+  const returnFromFocusStartCamera = useMemo(() => new THREE.Vector3(), []);
+  const returnFromFocusStartLook = useMemo(() => new THREE.Vector3(), []);
+  const splineCamPoint = useMemo(() => new THREE.Vector3(), []);
+  const splineLookPoint = useMemo(() => new THREE.Vector3(), []);
+  const blendedCamPoint = useMemo(() => new THREE.Vector3(), []);
+  const blendedLookPoint = useMemo(() => new THREE.Vector3(), []);
+  const cameraFallback = useMemo(
+    () =>
+      new THREE.Vector3(
+        CAMERA_SPLINE_POINTS[0][0],
+        CAMERA_SPLINE_POINTS[0][1],
+        CAMERA_SPLINE_POINTS[0][2],
+      ),
+    [],
+  );
+  const lookFallback = useMemo(
+    () =>
+      new THREE.Vector3(
+        LOOK_SPLINE_POINTS[0][0],
+        LOOK_SPLINE_POINTS[0][1],
+        LOOK_SPLINE_POINTS[0][2],
+      ),
+    [],
+  );
 
   const cameraPath = useMemo(
     () =>
@@ -63,18 +145,31 @@ function ScrollPathCameraRig({ onTelemetry, jumpRequest, enabled }) {
     const onWheel = (event) => {
       event.preventDefault();
       if (!introDone.current) return;
-      targetProgress.current = clamp01(
+      if (focusActive.current) onFocusChange?.(false);
+      focusActive.current = false;
+      targetProgress.current = clampPlayableProgress(
         targetProgress.current + event.deltaY * 0.00045,
       );
     };
 
     const onKeyDown = (event) => {
       if (!introDone.current) return;
-      if (event.key === "ArrowDown" || event.key === "PageDown") {
-        targetProgress.current = clamp01(targetProgress.current + 0.055);
+
+      const isForward = event.key === "ArrowDown" || event.key === "PageDown";
+      const isBackward = event.key === "ArrowUp" || event.key === "PageUp";
+      if (!isForward && !isBackward) return;
+
+      if (focusActive.current) onFocusChange?.(false);
+      focusActive.current = false;
+      if (isForward) {
+        targetProgress.current = clampPlayableProgress(
+          targetProgress.current + 0.055,
+        );
       }
-      if (event.key === "ArrowUp" || event.key === "PageUp") {
-        targetProgress.current = clamp01(targetProgress.current - 0.055);
+      if (isBackward) {
+        targetProgress.current = clampPlayableProgress(
+          targetProgress.current - 0.055,
+        );
       }
     };
 
@@ -93,13 +188,50 @@ function ScrollPathCameraRig({ onTelemetry, jumpRequest, enabled }) {
     if (jumpRequest && jumpRequest.id !== lastJumpId.current) {
       lastJumpId.current = jumpRequest.id;
       introDone.current = true;
-      targetProgress.current = clamp01(jumpRequest.progress);
-      progress.current = clamp01(jumpRequest.progress);
+      if (focusActive.current) onFocusChange?.(false);
+      focusActive.current = false;
+      targetProgress.current = clampPlayableProgress(jumpRequest.progress);
+      progress.current = clampPlayableProgress(jumpRequest.progress);
     }
 
-    if (!introDone.current) {
+    if (focusRequest && focusRequest.id !== lastFocusId.current) {
+      lastFocusId.current = focusRequest.id;
+      introDone.current = true;
+      focusActive.current = true;
+      focusCameraTarget.set(
+        focusRequest.camera[0],
+        focusRequest.camera[1],
+        focusRequest.camera[2],
+      );
+      focusLookTarget.set(
+        focusRequest.look[0],
+        focusRequest.look[1],
+        focusRequest.look[2],
+      );
+      onFocusChange?.(true);
+    }
+
+    if (
+      clearFocusRequest &&
+      clearFocusRequest.id !== lastClearFocusId.current
+    ) {
+      lastClearFocusId.current = clearFocusRequest.id;
+      // Always animate out from the current camera state to avoid intermittent snap/no-op exits.
+      returnFromFocusActive.current = true;
+      returnFromFocusElapsed.current = 0;
+      returnFromFocusStartCamera.copy(camera.position);
+      returnFromFocusStartLook.copy(lookPoint);
+      focusActive.current = false;
+    }
+
+    if (!introCanStart) {
+      progress.current = 0;
+      targetProgress.current = 0;
+    }
+
+    if (!introDone.current && introCanStart) {
       introElapsed.current += delta;
-      const introT = clamp01((introElapsed.current - 0.08) / 1.9);
+      const introT = clamp01((introElapsed.current - 0.08) / 3.2);
       const easedIntro = THREE.MathUtils.smootherstep(introT, 0, 1);
       progress.current = THREE.MathUtils.lerp(0, heroProgress, easedIntro);
       targetProgress.current = progress.current;
@@ -109,16 +241,98 @@ function ScrollPathCameraRig({ onTelemetry, jumpRequest, enabled }) {
       }
     }
 
-    progress.current = THREE.MathUtils.damp(
-      progress.current,
-      targetProgress.current,
-      5,
-      delta,
-    );
-    const t = THREE.MathUtils.smootherstep(progress.current, 0, 1);
-    camera.position.copy(cameraPath.getPointAt(t));
-    lookPoint.copy(lookPath.getPointAt(t));
-    camera.lookAt(lookPoint);
+    if (introDone.current) {
+      targetProgress.current = clampPlayableProgress(targetProgress.current);
+      progress.current = clampPlayableProgress(progress.current);
+    }
+
+    if (focusActive.current) {
+      camera.position.x = THREE.MathUtils.damp(
+        camera.position.x,
+        focusCameraTarget.x,
+        4.6,
+        delta,
+      );
+      camera.position.y = THREE.MathUtils.damp(
+        camera.position.y,
+        focusCameraTarget.y,
+        4.6,
+        delta,
+      );
+      camera.position.z = THREE.MathUtils.damp(
+        camera.position.z,
+        focusCameraTarget.z,
+        4.6,
+        delta,
+      );
+
+      lookPoint.x = THREE.MathUtils.damp(
+        lookPoint.x,
+        focusLookTarget.x,
+        4.8,
+        delta,
+      );
+      lookPoint.y = THREE.MathUtils.damp(
+        lookPoint.y,
+        focusLookTarget.y,
+        4.8,
+        delta,
+      );
+      lookPoint.z = THREE.MathUtils.damp(
+        lookPoint.z,
+        focusLookTarget.z,
+        4.8,
+        delta,
+      );
+      camera.lookAt(lookPoint);
+    } else if (returnFromFocusActive.current) {
+      const safeProgress = Number.isFinite(progress.current)
+        ? THREE.MathUtils.clamp(progress.current, 0, 1)
+        : 0;
+      const t = THREE.MathUtils.smootherstep(safeProgress, 0, 1);
+      safeSamplePointAt(cameraPath, t, splineCamPoint, cameraFallback);
+      safeSamplePointAt(lookPath, t, splineLookPoint, lookFallback);
+
+      returnFromFocusElapsed.current += delta;
+      const blendT = clamp01(
+        returnFromFocusElapsed.current / returnFromFocusDuration,
+      );
+      const easedBlend = THREE.MathUtils.smootherstep(blendT, 0, 1);
+
+      blendedCamPoint.lerpVectors(
+        returnFromFocusStartCamera,
+        splineCamPoint,
+        easedBlend,
+      );
+      blendedLookPoint.lerpVectors(
+        returnFromFocusStartLook,
+        splineLookPoint,
+        easedBlend,
+      );
+
+      camera.position.copy(blendedCamPoint);
+      lookPoint.copy(blendedLookPoint);
+      camera.lookAt(lookPoint);
+
+      if (blendT >= 1) {
+        returnFromFocusActive.current = false;
+        onFocusChange?.(false);
+      }
+    } else {
+      progress.current = THREE.MathUtils.damp(
+        progress.current,
+        targetProgress.current,
+        5,
+        delta,
+      );
+      const safeProgress = Number.isFinite(progress.current)
+        ? THREE.MathUtils.clamp(progress.current, 0, 1)
+        : 0;
+      const t = THREE.MathUtils.smootherstep(safeProgress, 0, 1);
+      safeSamplePointAt(cameraPath, t, camera.position, cameraFallback);
+      safeSamplePointAt(lookPath, t, lookPoint, lookFallback);
+      camera.lookAt(lookPoint);
+    }
 
     telemetryAccumulator.current += delta;
     if (telemetryAccumulator.current >= 0.08 && onTelemetry) {
@@ -139,6 +353,27 @@ function ScrollPathCameraRig({ onTelemetry, jumpRequest, enabled }) {
       });
     }
   });
+
+  return null;
+}
+
+function ModelLoadGate({ onReady }) {
+  const { active, progress } = useProgress();
+  const reported = useRef(false);
+  const sawLoading = useRef(false);
+
+  useEffect(() => {
+    if (active) sawLoading.current = true;
+
+    if (
+      !reported.current &&
+      !active &&
+      (sawLoading.current || progress >= 100)
+    ) {
+      reported.current = true;
+      onReady?.();
+    }
+  }, [active, progress, onReady]);
 
   return null;
 }
@@ -174,6 +409,9 @@ function FreeCameraTelemetry({ onTelemetry, controlsRef, enabled }) {
 }
 
 export default function App() {
+  const introTargetProgress = 0.556;
+  const hotspotTriggerProgress = 1.0;
+  const hotspotTriggerTolerance = 0.03;
   const checkpoints = useMemo(
     () =>
       CAMERA_SPLINE_POINTS.map((_, index) => {
@@ -182,7 +420,8 @@ export default function App() {
       }),
     [],
   );
-  const [freeMove, setFreeMove] = useState(true);
+  const [freeMove, setFreeMove] = useState(false);
+  const [introCanStart, setIntroCanStart] = useState(false);
   const [telemetry, setTelemetry] = useState({
     progress: 0,
     targetProgress: 0,
@@ -190,17 +429,48 @@ export default function App() {
     look: { x: 0, y: 0, z: 0 },
   });
   const [jumpRequest, setJumpRequest] = useState(null);
+  const [focusRequest, setFocusRequest] = useState(null);
+  const [clearFocusRequest, setClearFocusRequest] = useState(null);
+  const [focusActive, setFocusActive] = useState(false);
   const controlsRef = useRef(null);
+  const machineHoverEnabled =
+    !freeMove && focusActive && focusRequest?.shotId === "machines";
+
+  const hotspotsVisible =
+    !freeMove &&
+    !focusActive &&
+    introCanStart &&
+    Math.abs(telemetry.progress - hotspotTriggerProgress) <=
+      hotspotTriggerTolerance;
+
+  const clearFocus = () => {
+    setClearFocusRequest({ id: Date.now() });
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      if (!focusActive) return;
+      clearFocus();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [focusActive]);
 
   const goToCheckpoint = (direction) => {
     const current = telemetry.targetProgress;
+    const playableCheckpoints = checkpoints.filter(
+      (value) => value >= introTargetProgress,
+    );
+
     if (direction > 0) {
-      const next = checkpoints.find((value) => value > current + 0.001);
+      const next = playableCheckpoints.find((value) => value > current + 0.001);
       if (next != null) setJumpRequest({ id: Date.now(), progress: next });
       return;
     }
 
-    const reversed = [...checkpoints].reverse();
+    const reversed = [...playableCheckpoints].reverse();
     const prev = reversed.find((value) => value < current - 0.001);
     if (prev != null) setJumpRequest({ id: Date.now(), progress: prev });
   };
@@ -309,7 +579,89 @@ export default function App() {
             {index}: new THREE.Vector3({point[0]}, {point[1]}, {point[2]})
           </div>
         ))}
+        <div style={{ marginTop: 8, color: "#8ff6ff" }}>Focus Shots</div>
+        {FOCUS_SHOTS.map((shot) => (
+          <div key={shot.id}>
+            {shot.label}: C[{shot.camera[0]}, {shot.camera[1]}, {shot.camera[2]}
+            ] L[
+            {shot.look[0]}, {shot.look[1]}, {shot.look[2]}]
+          </div>
+        ))}
       </div>
+
+      {hotspotsVisible && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 15,
+            pointerEvents: "none",
+          }}
+        >
+          {FOCUS_SHOTS.map((shot) => (
+            <button
+              key={`spot-${shot.id}`}
+              type="button"
+              onClick={() =>
+                setFocusRequest({
+                  id: Date.now(),
+                  shotId: shot.id,
+                  camera: shot.camera,
+                  look: shot.look,
+                })
+              }
+              style={{
+                position: "absolute",
+                left: shot.ui.left,
+                top: shot.ui.top,
+                width: 44,
+                height: 44,
+                marginLeft: -22,
+                marginTop: -22,
+                borderRadius: "50%",
+                border: "2px solid rgba(170, 255, 68, 0.9)",
+                background: "rgba(145, 255, 43, 0.18)",
+                color: "#d8ff9c",
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                pointerEvents: "auto",
+                boxShadow: "0 0 22px rgba(145, 255, 43, 0.42)",
+              }}
+              title={`Focus ${shot.label}`}
+            >
+              {shot.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!freeMove && focusActive && (
+        <button
+          type="button"
+          onClick={clearFocus}
+          style={{
+            position: "fixed",
+            top: 12,
+            right: 12,
+            zIndex: 25,
+            background: "rgba(22, 16, 36, 0.82)",
+            color: "#d8f7ff",
+            border: "1px solid rgba(120, 224, 255, 0.7)",
+            borderRadius: 8,
+            padding: "8px 12px",
+            fontFamily:
+              "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            fontSize: 12,
+            cursor: "pointer",
+            boxShadow: "0 0 16px rgba(120, 224, 255, 0.24)",
+          }}
+        >
+          ESC
+        </button>
+      )}
 
       <div className="canvas-shell">
         <Canvas
@@ -329,10 +681,16 @@ export default function App() {
 
           {import.meta.env.DEV ? <CameraLogger every={0.35} /> : null}
 
+          <ModelLoadGate onReady={() => setIntroCanStart(true)} />
+
           <ScrollPathCameraRig
             onTelemetry={setTelemetry}
             jumpRequest={jumpRequest}
+            focusRequest={focusRequest}
+            clearFocusRequest={clearFocusRequest}
+            onFocusChange={setFocusActive}
             enabled={!freeMove}
+            introCanStart={introCanStart}
           />
           <FreeCameraTelemetry
             onTelemetry={setTelemetry}
@@ -346,7 +704,7 @@ export default function App() {
             enableDamping
             dampingFactor={0.08}
           />
-          <Scene />
+          <Scene machineHoverEnabled={machineHoverEnabled} />
         </Canvas>
       </div>
 

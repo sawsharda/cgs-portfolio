@@ -56,9 +56,12 @@ body {
 }
 
 .cgs-game-card::before {
-  content: '';
+  content: "";
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: repeating-linear-gradient(
     0deg,
     transparent,
@@ -102,7 +105,10 @@ body {
 
 .cgs-image-overlay {
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: linear-gradient(to bottom, transparent 30%, rgba(8, 12, 25, 0.9) 100%);
   pointer-events: none;
   transition: background 0.3s ease;
